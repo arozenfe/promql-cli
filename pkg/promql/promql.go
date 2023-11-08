@@ -124,6 +124,18 @@ func (p *PromQL) InstantQuery(queryString string) (model.Vector, v1.Warnings, er
 func parseRangeStart(s string) (time.Time, error) {
 	if t, err := time.Parse(time.RFC3339, s); err == nil {
 		return t, nil
+	} else if t, err = time.ParseInLocation(time.DateOnly, s, time.Local); err == nil {
+		return t, nil
+	} else if t, err = time.ParseInLocation("2006-01-02-15:04", s, time.Local); err == nil {
+		return t, nil
+	} else if t, err = time.Parse("2006-01-02-15MST", s); err == nil {
+		return t, nil
+	} else if t, err = time.ParseInLocation("2006-01-02-15", s, time.Local); err == nil {
+		return t, nil
+	} else if t, err = time.Parse("2006-01-02-15:04-07:00", s); err == nil {
+		return t, nil
+	} else if t, err = time.Parse("2006-01-02-15-07:00", s); err == nil {
+		return t, nil
 	} else if d, err := time.ParseDuration(s); err == nil {
 		return time.Now().Add(-d), nil
 	} else {
@@ -136,11 +148,24 @@ func parseRangeEnd(e string) (time.Time, error) {
 	if e == "now" {
 		return time.Now(), nil
 	}
-	t, err := time.Parse(time.RFC3339, e)
-	if err != nil {
-		return time.Time{}, fmt.Errorf("error parsing range end time, %v", err)
+	if t, err := time.Parse(time.RFC3339, e); err == nil {
+		return t, nil
+	} else if t, err = time.ParseInLocation(time.DateOnly, e, time.Local); err == nil {
+		return t, nil
+	} else if t, err = time.ParseInLocation("2006-01-02-15:04", e, time.Local); err == nil {
+		return t, nil
+	} else if t, err = time.ParseInLocation("2006-01-02-15", e, time.Local); err == nil {
+		return t, nil
+	} else if t, err = time.Parse("2006-01-02-15:04-07:00", e); err == nil {
+		return t, nil
+	} else if t, err = time.Parse("2006-01-02-15-07:00", e); err == nil {
+		return t, nil
+	} else if d, err := time.ParseDuration(e); err == nil {
+		return time.Now().Add(-d), nil
+	} else {
+		err = fmt.Errorf("unable to parse range end time, %v", err)
+		return time.Time{}, nil
 	}
-	return t, nil
 }
 
 // getRange creates a prometheus range from the provided start, end, and step options
@@ -227,7 +252,7 @@ func (p *PromQL) MetaQuery(query string) (map[string][]v1.Metadata, error) {
 // SeriesQuery returns prometheus series data
 func (p *PromQL) SeriesQuery(query string) ([]model.LabelSet, v1.Warnings, error) {
 	// Set defaults based on time flag
-	s := p.Time.Add(-15 * time.Second)
+	s := p.Time.Add(-120 * time.Second)
 	e := p.Time
 	// Parse range start and end if provided and override the defaults
 	if p.Start != "" {
