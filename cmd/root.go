@@ -66,6 +66,13 @@ var rootCmd = &cobra.Command{
 		pql.Host = viper.GetString("host")
 		pql.Step = viper.GetString("step")
 		pql.Output = viper.GetString("output")
+		if viper.GetString("labels") == "" {
+			pql.Labels = nil
+		} else {
+			for _, l := range strings.Split(viper.GetString("labels"), ",") {
+				pql.AppendLabel(l)
+			}
+		}
 		// Convert our timeout flag into a time.Duration
 		timeout = viper.GetInt("timeout")
 		pql.TimeoutDuration = time.Duration(int64(timeout)) * time.Second
@@ -102,7 +109,7 @@ var rootCmd = &cobra.Command{
 				errlog.Fatalln(err)
 			}
 			r := writer.RangeResult{Matrix: result}
-			if err := writer.WriteRange(&r, pql.Output, pql.NoHeaders); err != nil {
+			if err := writer.WriteRange(&r, pql.Output, pql.Labels, pql.NoHeaders); err != nil {
 				errlog.Println(err)
 			}
 		} else {
@@ -116,7 +123,7 @@ var rootCmd = &cobra.Command{
 			}
 			// Write out result
 			r := writer.InstantResult{Vector: result}
-			if err := writer.WriteInstant(&r, pql.Output, pql.NoHeaders); err != nil {
+			if err := writer.WriteInstant(&r, pql.Output, pql.Labels, pql.NoHeaders); err != nil {
 				errlog.Fatalln(err)
 			}
 		}
@@ -148,6 +155,10 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&timeStr, "time", "now", "time for instant queries (either 'now', or an ISO 8601 formatted date string)")
 	rootCmd.PersistentFlags().String("output", "", "override the default output format (graph for range queries, table for instant queries and metric names). Options: json,csv")
 	if err := viper.BindPFlag("output", rootCmd.PersistentFlags().Lookup("output")); err != nil {
+		errlog.Fatalln(err)
+	}
+	rootCmd.PersistentFlags().String("labels", "", "Show only labels")
+	if err := viper.BindPFlag("labels", rootCmd.PersistentFlags().Lookup("labels")); err != nil {
 		errlog.Fatalln(err)
 	}
 	rootCmd.PersistentFlags().BoolVar(&pql.NoHeaders, "no-headers", false, "disable table headers for instant queries")

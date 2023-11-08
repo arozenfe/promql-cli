@@ -32,7 +32,7 @@ var metaCmd = &cobra.Command{
 			errlog.Fatalln(err)
 		}
 		r = result
-		if err := writer.WriteInstant(&r, pql.Output, pql.NoHeaders); err != nil {
+		if err := writer.WriteInstant(&r, pql.Output, nil, pql.NoHeaders); err != nil {
 			errlog.Fatalln(err)
 		}
 	},

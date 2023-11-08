@@ -39,7 +39,7 @@ var metricsCmd = &cobra.Command{
 		}
 		r = result
 		var m writer.MetricsResult = r.Metrics()
-		if err := writer.WriteInstant(&m, pql.Output, pql.NoHeaders); err != nil {
+		if err := writer.WriteInstant(&m, pql.Output, nil, pql.NoHeaders); err != nil {
 			errlog.Fatalln(err)
 		}
 	},

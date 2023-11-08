@@ -36,7 +36,7 @@ var labelsCmd = &cobra.Command{
 		}
 		// Write out result
 		r := writer.LabelsResult{Vector: result}
-		if err := writer.WriteInstant(&r, pql.Output, pql.NoHeaders); err != nil {
+		if err := writer.WriteInstant(&r, pql.Output, nil, pql.NoHeaders); err != nil {
 			errlog.Fatalln(err)
 		}
 	},

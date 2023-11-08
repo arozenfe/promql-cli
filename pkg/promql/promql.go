@@ -97,6 +97,11 @@ type PromQL struct {
 	Auth            config.Authorization
 	Client          v1.API
 	TLSConfig       config.TLSConfig
+	Labels          []model.LabelName
+}
+
+func (p *PromQL) AppendLabel(s string) {
+	p.Labels = append(p.Labels, model.LabelName(s))
 }
 
 // InstantQuery performs an instant query and returns the result

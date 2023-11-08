@@ -36,13 +36,14 @@ import (
 // Defines Json and Csv writers
 type Writer interface {
 	Json() (bytes.Buffer, error)
-	Csv(noHeaders bool) (bytes.Buffer, error)
+	Csv(noHeaders bool, ls []model.LabelName) (bytes.Buffer, error)
 }
 
 // RangeWriter extends the Writer interface by adding a Graph method
 // Used specifically for writing the results of range queries
 type RangeWriter interface {
 	Writer
+	Table(noHeaders bool, ls []model.LabelName) (bytes.Buffer, error)
 	Graph(dim util.TermDimensions) (bytes.Buffer, error)
 }
 
@@ -50,7 +51,7 @@ type RangeWriter interface {
 // Use specifically for writing the results of instant queries
 type InstantWriter interface {
 	Writer
-	Table(noHeaders bool) (bytes.Buffer, error)
+	Table(noHeaders bool, ls []model.LabelName) (bytes.Buffer, error)
 }
 
 // RangeResult is wrapper of the prometheus model.Matrix type returned from range queries
@@ -140,25 +141,95 @@ func (r *RangeResult) Json() (bytes.Buffer, error) {
 	return buf, nil
 }
 
+func (r *RangeResult) Table(noHeaders bool, ls []model.LabelName) (bytes.Buffer, error) {
+	var buf bytes.Buffer
+	const padding = 4
+	w := tabwriter.NewWriter(&buf, 0, 0, padding, ' ', 0)
+	labels, err := util.UniqLabels(r.Matrix)
+	if ls != nil {
+		for _, required := range ls {
+			var found bool
+			for _, l := range labels {
+				if l == required {
+					found = true
+					break
+				}
+			}
+			if !found {
+				panic("Could not find label: " + required)
+			}
+		}
+		labels = ls
+	}
+	if err != nil {
+		return buf, err
+	}
+	if !noHeaders {
+		var titles []string
+		titles = append(titles, "TIMESTAMP")
+		titles = append(titles, "VALUE")
+		for _, k := range labels {
+			titles = append(titles, strings.ToUpper(string(k)))
+		}
+		titleRow := strings.Join(titles, "\t")
+		if _, err := fmt.Fprintln(w, titleRow); err != nil {
+			return buf, err
+		}
+	}
+
+	for _, m := range r.Matrix {
+		for _, v := range m.Values {
+			data := make([]string, len(labels))
+			for i, key := range labels {
+				data[i] = string(m.Metric[key])
+			}
+			data = append([]string {v.Timestamp.Time().Format("2006-01-02-15:04:05"), v.Value.String()}, data...)
+			row := strings.Join(data, "\t")
+			if _, err := fmt.Fprintln(w, row); err != nil {
+				return buf, err
+			}
+		}
+	}
+	if err := w.Flush(); err != nil {
+		return buf, err
+	}
+	return buf, nil
+}
+
 // Csv returns the response from a range query as a csv
-func (r *RangeResult) Csv(noHeaders bool) (bytes.Buffer, error) {
+func (r *RangeResult) Csv(noHeaders bool, ls []model.LabelName) (bytes.Buffer, error) {
 	var (
 		buf  bytes.Buffer
 		rows [][]string
 	)
 	w := csv.NewWriter(&buf)
 	labels, err := util.UniqLabels(r.Matrix)
+	if ls != nil {
+		for _, required := range ls {
+			var found bool
+			for _, l := range labels {
+				if l == required {
+					found = true
+					break
+				}
+			}
+			if !found {
+				panic("Could not find label: " + required)
+			}
+		}
+		labels = ls
+	}
 	if err != nil {
 		return buf, err
 	}
 	if !noHeaders {
 		var titleRow []string
+		titleRow = append(titleRow, "timestamp")
+		titleRow = append(titleRow, "value")
 		for _, k := range labels {
 			titleRow = append(titleRow, string(k))
 		}
 
-		titleRow = append(titleRow, "value")
-		titleRow = append(titleRow, "timestamp")
 
 		rows = append(rows, titleRow)
 	}
@@ -169,8 +240,9 @@ func (r *RangeResult) Csv(noHeaders bool) (bytes.Buffer, error) {
 			for i, key := range labels {
 				row[i] = string(m.Metric[key])
 			}
-			row = append(row, v.Value.String())
-			row = append(row, v.Timestamp.Time().Format(time.RFC3339))
+			row = append([]string {v.Timestamp.Time().Format("2006-01-02-15:04:05"), v.Value.String()}, row...)
+			//row = append(row, v.Value.String())
+			//row = append(row, v.Timestamp.Time().Format(time.RFC3339))
 			rows = append(rows, row)
 		}
 	}
@@ -182,7 +254,7 @@ func (r *RangeResult) Csv(noHeaders bool) (bytes.Buffer, error) {
 
 // WriteRange writes out the results of the query to an
 // output buffer and prints it to stdout
-func WriteRange(r RangeWriter, format string, noHeaders bool) error {
+func WriteRange(r RangeWriter, format string, labels []model.LabelName, noHeaders bool) error {
 	var (
 		buf bytes.Buffer
 		err error
@@ -194,7 +266,12 @@ func WriteRange(r RangeWriter, format string, noHeaders bool) error {
 			return err
 		}
 	case "csv":
-		buf, err = r.Csv(noHeaders)
+		buf, err = r.Csv(noHeaders, labels)
+		if err != nil {
+			return err
+		}
+	case "table":
+		buf, err = r.Table(noHeaders, labels)
 		if err != nil {
 			return err
 		}
@@ -219,21 +296,36 @@ type InstantResult struct {
 }
 
 // Table returns the response from an instant query as a tab separated table
-func (r *InstantResult) Table(noHeaders bool) (bytes.Buffer, error) {
+func (r *InstantResult) Table(noHeaders bool, ls []model.LabelName) (bytes.Buffer, error) {
 	var buf bytes.Buffer
 	const padding = 4
 	w := tabwriter.NewWriter(&buf, 0, 0, padding, ' ', 0)
 	labels, err := util.UniqLabels(r.Vector)
+	if ls != nil {
+		for _, required := range ls {
+			var found bool
+			for _, l := range labels {
+				if l == required {
+					found = true
+					break
+				}
+			}
+			if !found {
+				panic("Could not find label: " + required)
+			}
+		}
+		labels = ls
+	}
 	if err != nil {
 		return buf, err
 	}
 	if !noHeaders {
 		var titles []string
+		titles = append(titles, "TIMESTAMP")
+		titles = append(titles, "VALUE")
 		for _, k := range labels {
 			titles = append(titles, strings.ToUpper(string(k)))
 		}
-		titles = append(titles, "VALUE")
-		titles = append(titles, "TIMESTAMP")
 		titleRow := strings.Join(titles, "\t")
 		if _, err := fmt.Fprintln(w, titleRow); err != nil {
 			return buf, err
@@ -245,8 +337,7 @@ func (r *InstantResult) Table(noHeaders bool) (bytes.Buffer, error) {
 		for i, key := range labels {
 			data[i] = string(v.Metric[key])
 		}
-		data = append(data, v.Value.String())
-		data = append(data, v.Timestamp.Time().Format(time.RFC3339))
+		data = append([]string {v.Timestamp.Time().Format("2006-01-02-15:04:05"), v.Value.String()}, data...)
 		row := strings.Join(data, "\t")
 		if _, err := fmt.Fprintln(w, row); err != nil {
 			return buf, err
@@ -270,24 +361,39 @@ func (r *InstantResult) Json() (bytes.Buffer, error) {
 }
 
 // Csv returns the response from an instant query as a csv
-func (r *InstantResult) Csv(noHeaders bool) (bytes.Buffer, error) {
+func (r *InstantResult) Csv(noHeaders bool, ls []model.LabelName) (bytes.Buffer, error) {
 	var (
 		buf  bytes.Buffer
 		rows [][]string
 	)
 	w := csv.NewWriter(&buf)
 	labels, err := util.UniqLabels(r.Vector)
+	if ls != nil {
+		for _, required := range ls {
+			var found bool
+			for _, l := range labels {
+				if l == required {
+					found = true
+					break
+				}
+			}
+			if !found {
+				panic("Could not find label: " + required)
+			}
+		}
+		labels = ls
+	}
 	if err != nil {
 		return buf, err
 	}
 	if !noHeaders {
 		var titleRow []string
+		titleRow = append(titleRow, "timestamp")
+		titleRow = append(titleRow, "value")
 		for _, k := range labels {
 			titleRow = append(titleRow, string(k))
 		}
 
-		titleRow = append(titleRow, "value")
-		titleRow = append(titleRow, "timestamp")
 
 		rows = append(rows, titleRow)
 	}
@@ -297,8 +403,7 @@ func (r *InstantResult) Csv(noHeaders bool) (bytes.Buffer, error) {
 		for i, key := range labels {
 			row[i] = string(v.Metric[key])
 		}
-		row = append(row, v.Value.String())
-		row = append(row, v.Timestamp.Time().Format(time.RFC3339))
+		row = append([]string {v.Timestamp.Time().Format("2006-01-02-15:04:05"), v.Value.String()}, row...)
 		rows = append(rows, row)
 	}
 	if err := w.WriteAll(rows); err != nil {
@@ -313,7 +418,7 @@ func (r *InstantResult) Csv(noHeaders bool) (bytes.Buffer, error) {
 type MetricsResult []string
 
 // Table returns the response from a metrics query as a single column table
-func (r *MetricsResult) Table(noHeaders bool) (bytes.Buffer, error) {
+func (r *MetricsResult) Table(noHeaders bool, ls []model.LabelName) (bytes.Buffer, error) {
 	var buf bytes.Buffer
 	const padding = 4
 	w := tabwriter.NewWriter(&buf, 0, 0, padding, ' ', 0)
@@ -347,7 +452,7 @@ func (r *MetricsResult) Json() (bytes.Buffer, error) {
 }
 
 // Csv returns the response from a metrics query as a single column csv
-func (r *MetricsResult) Csv(noHeaders bool) (bytes.Buffer, error) {
+func (r *MetricsResult) Csv(noHeaders bool, ls []model.LabelName) (bytes.Buffer, error) {
 	var (
 		buf  bytes.Buffer
 		rows [][]string
@@ -375,7 +480,7 @@ type LabelsResult struct {
 }
 
 // Table returns the labels from an instant query as a single column table
-func (r *LabelsResult) Table(noHeaders bool) (bytes.Buffer, error) {
+func (r *LabelsResult) Table(noHeaders bool, ls []model.LabelName) (bytes.Buffer, error) {
 	var buf bytes.Buffer
 	const padding = 4
 	w := tabwriter.NewWriter(&buf, 0, 0, padding, ' ', 0)
@@ -417,7 +522,7 @@ func (r *LabelsResult) Json() (bytes.Buffer, error) {
 }
 
 // Csv returns the labels from an instant query as a single column csv
-func (r *LabelsResult) Csv(noHeaders bool) (bytes.Buffer, error) {
+func (r *LabelsResult) Csv(noHeaders bool, ls []model.LabelName) (bytes.Buffer, error) {
 	var (
 		buf  bytes.Buffer
 		rows [][]string
@@ -466,7 +571,7 @@ func (r *MetaResult) Json() (bytes.Buffer, error) {
 }
 
 // Csv returns the result from a metadata query as csv
-func (r *MetaResult) Csv(noHeaders bool) (bytes.Buffer, error) {
+func (r *MetaResult) Csv(noHeaders bool, ls []model.LabelName) (bytes.Buffer, error) {
 	var (
 		buf  bytes.Buffer
 		rows [][]string
@@ -495,7 +600,7 @@ func (r *MetaResult) Csv(noHeaders bool) (bytes.Buffer, error) {
 }
 
 // Table returns the result from a metadata query as tab separated table
-func (r *MetaResult) Table(noHeaders bool) (bytes.Buffer, error) {
+func (r *MetaResult) Table(noHeaders bool, ls []model.LabelName) (bytes.Buffer, error) {
 	var buf bytes.Buffer
 	const padding = 4
 	w := tabwriter.NewWriter(&buf, 0, 0, padding, ' ', 0)
@@ -544,7 +649,7 @@ func (r *SeriesResult) Metrics() MetricsResult {
 
 // WriteInstant writes out the results of the query to an
 // output buffer and prints it to stdout
-func WriteInstant(i InstantWriter, format string, noHeaders bool) error {
+func WriteInstant(i InstantWriter, format string, labels []model.LabelName, noHeaders bool) error {
 	var (
 		buf bytes.Buffer
 		err error
@@ -556,12 +661,12 @@ func WriteInstant(i InstantWriter, format string, noHeaders bool) error {
 			return err
 		}
 	case "csv":
-		buf, err = i.Csv(noHeaders)
+		buf, err = i.Csv(noHeaders, labels)
 		if err != nil {
 			return err
 		}
 	default:
-		buf, err = i.Table(noHeaders)
+		buf, err = i.Table(noHeaders, labels)
 		if err != nil {
 			return err
 		}
