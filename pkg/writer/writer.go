@@ -241,8 +241,6 @@ func (r *RangeResult) Csv(noHeaders bool, ls []model.LabelName) (bytes.Buffer, e
 				row[i] = string(m.Metric[key])
 			}
 			row = append([]string {v.Timestamp.Time().Format("2006-01-02-15:04:05"), v.Value.String()}, row...)
-			//row = append(row, v.Value.String())
-			//row = append(row, v.Timestamp.Time().Format(time.RFC3339))
 			rows = append(rows, row)
 		}
 	}
